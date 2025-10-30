@@ -1,4 +1,10 @@
-What's the current weather in San Francisco?
-Calculate a 15% tip on a $50.00 restaurant bill.
-Search for the latest news about artificial intelligence.
-Get the current time in Tokyo, Japan.
+List all files in the current directory.
+Read the contents of the file named config.txt.
+Create a new file called output.txt with the text "Hello World".
+Find all Python files in the /home/user directory.
+Read the first 10 lines from the file logs/application.log.
+Change line 5 in the file settings.ini to set the value "debug=true".
+Create a directory called backup and copy all .json files into it.
+Find the line containing "API_KEY" in .env file and replace it with "API_KEY=new_secret_key".
+Read database.json, extract the "users" array, and write it to a new file users_backup.json.
+Search through all Python files in the src/ directory, find any TODO comments, extract them with line numbers, and write a summary report to todos.txt.

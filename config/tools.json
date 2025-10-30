@@ -2,78 +2,129 @@
   {
     "type": "function",
     "function": {
-      "name": "get_weather",
-      "description": "Get the current weather for a specific location",
+      "name": "read_file",
+      "description": "Read the contents of a file from the filesystem",
       "parameters": {
         "type": "object",
         "properties": {
-          "location": {
+          "file_path": {
             "type": "string",
-            "description": "The city and state, e.g., San Francisco, CA"
+            "description": "The path to the file to read, e.g., '/home/user/config.txt'"
           },
-          "unit": {
-            "type": "string",
-            "enum": ["celsius", "fahrenheit"],
-            "description": "The temperature unit to use"
-          }
-        },
-        "required": ["location"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "calculate",
-      "description": "Perform mathematical calculations",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "expression": {
-            "type": "string",
-            "description": "The mathematical expression to calculate, e.g., '50 * 0.15'"
-          }
-        },
-        "required": ["expression"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "search_news",
-      "description": "Search for recent news articles on a given topic",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "The search query for news articles"
-          },
-          "limit": {
+          "start_line": {
             "type": "integer",
-            "description": "Maximum number of results to return",
-            "default": 10
+            "description": "Optional: Line number to start reading from (1-indexed)",
+            "default": 1
+          },
+          "num_lines": {
+            "type": "integer",
+            "description": "Optional: Number of lines to read. If not specified, reads entire file"
           }
         },
-        "required": ["query"]
+        "required": ["file_path"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "get_current_time",
-      "description": "Get the current time for a specific location or timezone",
+      "name": "write_file",
+      "description": "Write content to a file, creating it if it doesn't exist or overwriting if it does",
       "parameters": {
         "type": "object",
         "properties": {
-          "location": {
+          "file_path": {
             "type": "string",
-            "description": "The city or timezone, e.g., 'Tokyo' or 'Asia/Tokyo'"
+            "description": "The path to the file to write to"
+          },
+          "content": {
+            "type": "string",
+            "description": "The content to write to the file"
+          },
+          "append": {
+            "type": "boolean",
+            "description": "If true, append to the file instead of overwriting. Default is false",
+            "default": false
           }
         },
-        "required": ["location"]
+        "required": ["file_path", "content"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_directory",
+      "description": "List all files and directories in a given directory path",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_path": {
+            "type": "string",
+            "description": "The path to the directory to list, e.g., '/home/user' or '.'"
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "If true, list files recursively in subdirectories. Default is false",
+            "default": false
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Optional: Filter results by file pattern, e.g., '*.py' or '*.json'"
+          }
+        },
+        "required": ["directory_path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "replace_line",
+      "description": "Replace or modify a specific line in a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "The path to the file to modify"
+          },
+          "line_number": {
+            "type": "integer",
+            "description": "The line number to replace (1-indexed)"
+          },
+          "new_content": {
+            "type": "string",
+            "description": "The new content for the line"
+          }
+        },
+        "required": ["file_path", "line_number", "new_content"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_line",
+      "description": "Get a specific line or range of lines from a file to view or edit",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "The path to the file"
+          },
+          "line_number": {
+            "type": "integer",
+            "description": "The line number to retrieve (1-indexed)"
+          },
+          "context_lines": {
+            "type": "integer",
+            "description": "Optional: Number of lines before and after to include for context. Default is 0",
+            "default": 0
+          }
+        },
+        "required": ["file_path", "line_number"]
       }
     }
   }
