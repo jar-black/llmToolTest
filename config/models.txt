@@ -1,0 +1,3 @@
+llama3.1:8b
+mistral:7b
+phi3:medium

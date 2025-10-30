@@ -1,0 +1,80 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get the current weather for a specific location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "The city and state, e.g., San Francisco, CA"
+          },
+          "unit": {
+            "type": "string",
+            "enum": ["celsius", "fahrenheit"],
+            "description": "The temperature unit to use"
+          }
+        },
+        "required": ["location"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "calculate",
+      "description": "Perform mathematical calculations",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "The mathematical expression to calculate, e.g., '50 * 0.15'"
+          }
+        },
+        "required": ["expression"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_news",
+      "description": "Search for recent news articles on a given topic",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query for news articles"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return",
+            "default": 10
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_current_time",
+      "description": "Get the current time for a specific location or timezone",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "The city or timezone, e.g., 'Tokyo' or 'Asia/Tokyo'"
+          }
+        },
+        "required": ["location"]
+      }
+    }
+  }
+]

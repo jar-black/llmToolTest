@@ -1,0 +1,4 @@
+What's the current weather in San Francisco?
+Calculate a 15% tip on a $50.00 restaurant bill.
+Search for the latest news about artificial intelligence.
+Get the current time in Tokyo, Japan.
