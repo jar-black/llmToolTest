@@ -10,6 +10,9 @@ A comprehensive benchmark script for testing tool/function calling capabilities 
 - **Matrix Testing**: Tests every model against every prompt
 - **Two-Stage Testing**: Tests sequential tool calling where stage 2 depends on stage 1 results
 - **Tool Execution Simulation**: Simulates real tool execution for filesystem operations
+- **Path Validation**: Validates all file/directory paths and prevents access outside working directory
+- **Context Awareness**: Sends current working directory with every LLM call
+- **Per-Model Results**: Saves separate result files for each model tested
 - **Flexible Configuration**: Environment-based settings with easy configuration files
 - **Detailed Results**: Timestamped JSON output with summary statistics
 
@@ -29,8 +32,11 @@ llm-tool-benchmark/
 ├── README.md              # This file
 └── results/
     └── results_YYYYMMDD_HHMMSS/
-        ├── summary.json
-        └── detailed_results.json
+        ├── summary.json                    # Overall summary with per-model stats
+        ├── detailed_results.json           # All results combined
+        ├── results_llama3_1_8b.json       # Results for llama3.1:8b
+        ├── results_mistral_7b.json        # Results for mistral:7b
+        └── results_phi3_medium.json       # Results for phi3:medium
 ```
 
 ## Installation
@@ -192,6 +198,34 @@ Two-stage tests evaluate how well models handle sequential tool calls where the 
 
 This tests real-world scenarios where multiple tool calls must be coordinated to complete a task.
 
+### Path Validation and Security
+
+The benchmark includes built-in path validation to ensure safe tool execution:
+
+**Validation Features:**
+- All file/directory paths are validated before execution
+- Paths are resolved to absolute paths (resolves `..` and symlinks)
+- Access is restricted to the working directory only
+- Attempts to access paths outside the working directory are blocked with an error
+
+**Working Directory Context:**
+- Every LLM call includes the current working directory in a system message
+- Format: `"Current working directory: /path/to/working/dir"`
+- Tool execution results include `working_directory` field
+- Helps models understand path context and make correct tool calls
+
+**Example Path Validation:**
+```python
+# Valid paths (within working directory)
+"./config/models.txt"         # ✓ Allowed
+"config/models.txt"           # ✓ Allowed
+"/full/path/to/workdir/file"  # ✓ Allowed
+
+# Invalid paths (outside working directory)
+"../../../etc/passwd"         # ✗ Blocked
+"/etc/passwd"                 # ✗ Blocked
+```
+
 ### Metrics Collected
 
 For each test, the benchmark collects:
@@ -238,9 +272,40 @@ results/
     "total_tool_calls": 15,
     "avg_response_time_ms": 1250.5
   },
-  "models_tested": ["llama3.1:8b", "mistral:7b", "phi3:medium"],
+  "models_tested": ["llama3.1:8b", "mistral:7b"],
   "prompts_used": ["What's the weather...", "Calculate tip..."],
-  "tools_available": ["get_weather", "calculate", "search_news"]
+  "two_stage_prompts_used": ["Please analyze all files..."],
+  "tools_available": ["list_directory", "read_file", "write_file", "get_line", "replace_line"],
+  "per_model_statistics": {
+    "llama3.1:8b": {
+      "total_tests": 6,
+      "successful_tests": 6,
+      "failed_tests": 0,
+      "success_rate": 100.0,
+      "total_tool_calls": 8,
+      "avg_response_time_ms": 1150.3,
+      "single_stage_tests": 3,
+      "two_stage_tests": 3,
+      "two_stage_stats": {
+        "successful": 3,
+        "success_rate": 100.0,
+        "stage1_tool_calls": 3,
+        "stage2_tool_calls": 5,
+        "avg_stage1_time_ms": 1100.5,
+        "avg_stage2_time_ms": 2200.8
+      }
+    },
+    "mistral:7b": {
+      "total_tests": 6,
+      "successful_tests": 5,
+      "failed_tests": 1,
+      "success_rate": 83.33,
+      "total_tool_calls": 7,
+      "avg_response_time_ms": 1350.7,
+      "single_stage_tests": 3,
+      "two_stage_tests": 3
+    }
+  }
 }
 ```
 
