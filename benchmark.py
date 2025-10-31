@@ -54,6 +54,10 @@ class BenchmarkConfig:
 
     def _load_models(self) -> List[str]:
         """Load model names from config/models.txt"""
+        # If a single model is specified via -m flag, use it directly without validation
+        if self.single_model:
+            return [self.single_model]
+
         models_file = Path('config/models.txt')
         if not models_file.exists():
             raise FileNotFoundError(f"Models file not found: {models_file}")
@@ -63,13 +67,6 @@ class BenchmarkConfig:
 
         if not models:
             raise ValueError("No models found in config/models.txt")
-
-        # Filter for single model if specified
-        if self.single_model:
-            if self.single_model in models:
-                return [self.single_model]
-            else:
-                raise ValueError(f"Model '{self.single_model}' not found in config/models.txt. Available models: {', '.join(models)}")
 
         return models
 
