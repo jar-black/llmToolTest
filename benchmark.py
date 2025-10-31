@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import requests
 from dotenv import load_dotenv
+import glob
 
 
 class BenchmarkConfig:
@@ -46,6 +47,7 @@ class BenchmarkConfig:
         self.models = self._load_models()
         self.prompts = self._load_prompts()
         self.tools = self._load_tools()
+        self.two_stage_prompts = self._load_two_stage_prompts()
 
     def _load_models(self) -> List[str]:
         """Load model names from config/models.txt"""
@@ -92,6 +94,18 @@ class BenchmarkConfig:
 
         return tools
 
+    def _load_two_stage_prompts(self) -> List[str]:
+        """Load two-stage test prompts from config/two_stage_prompts.txt"""
+        prompts_file = Path('config/two_stage_prompts.txt')
+        if not prompts_file.exists():
+            # Two-stage prompts are optional, return empty list if not found
+            return []
+
+        with open(prompts_file, 'r') as f:
+            prompts = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+
+        return prompts
+
     def get_base_url(self) -> str:
         """Get base URL for the configured server"""
         if self.server_type == 'ollama':
@@ -100,6 +114,138 @@ class BenchmarkConfig:
             return f"http://{self.lmstudio_host}:{self.lmstudio_port}"
         else:
             raise ValueError(f"Unknown server type: {self.server_type}")
+
+
+class ToolSimulator:
+    """Simulates tool execution for two-stage testing"""
+
+    @staticmethod
+    def list_directory(directory_path: str, recursive: bool = False, pattern: Optional[str] = None) -> Dict[str, Any]:
+        """Simulate the list_directory tool"""
+        try:
+            path = Path(directory_path)
+            if not path.exists():
+                return {
+                    "success": False,
+                    "error": f"Directory not found: {directory_path}"
+                }
+
+            files = []
+
+            if recursive:
+                # Recursive listing
+                if pattern:
+                    pattern_path = str(path / "**" / pattern)
+                    matched_files = glob.glob(pattern_path, recursive=True)
+                else:
+                    pattern_path = str(path / "**" / "*")
+                    matched_files = glob.glob(pattern_path, recursive=True)
+
+                for file_path in matched_files:
+                    p = Path(file_path)
+                    if p.is_file():
+                        files.append({
+                            "name": p.name,
+                            "path": str(p),
+                            "type": "file",
+                            "size": p.stat().st_size
+                        })
+                    elif p.is_dir():
+                        files.append({
+                            "name": p.name,
+                            "path": str(p),
+                            "type": "directory"
+                        })
+            else:
+                # Non-recursive listing
+                for item in path.iterdir():
+                    if pattern and not item.match(pattern):
+                        continue
+
+                    if item.is_file():
+                        files.append({
+                            "name": item.name,
+                            "path": str(item),
+                            "type": "file",
+                            "size": item.stat().st_size
+                        })
+                    elif item.is_dir():
+                        files.append({
+                            "name": item.name,
+                            "path": str(item),
+                            "type": "directory"
+                        })
+
+            return {
+                "success": True,
+                "directory": str(path),
+                "files": files,
+                "count": len(files)
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    @staticmethod
+    def read_file(file_path: str, start_line: int = 1, num_lines: Optional[int] = None) -> Dict[str, Any]:
+        """Simulate the read_file tool"""
+        try:
+            path = Path(file_path)
+            if not path.exists():
+                return {
+                    "success": False,
+                    "error": f"File not found: {file_path}"
+                }
+
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+
+            # Apply line filtering
+            start_idx = max(0, start_line - 1)
+            if num_lines:
+                end_idx = min(len(lines), start_idx + num_lines)
+            else:
+                end_idx = len(lines)
+
+            content = ''.join(lines[start_idx:end_idx])
+
+            return {
+                "success": True,
+                "file_path": str(path),
+                "content": content,
+                "total_lines": len(lines),
+                "lines_returned": end_idx - start_idx
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    @staticmethod
+    def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a tool by name with given parameters"""
+        if tool_name == "list_directory":
+            return ToolSimulator.list_directory(
+                parameters.get("directory_path", "."),
+                parameters.get("recursive", False),
+                parameters.get("pattern")
+            )
+        elif tool_name == "read_file":
+            return ToolSimulator.read_file(
+                parameters.get("file_path"),
+                parameters.get("start_line", 1),
+                parameters.get("num_lines")
+            )
+        else:
+            return {
+                "success": False,
+                "error": f"Unknown tool: {tool_name}"
+            }
 
 
 class OllamaClient:
@@ -196,6 +342,47 @@ class OllamaClient:
                 "error": str(e)
             }
 
+    def chat_multi_turn(self, model: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Send a multi-turn chat request with tools"""
+        url = f"{self.base_url}/api/chat"
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False
+        }
+
+        start_time = time.time()
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=self.config.api_timeout
+            )
+            response.raise_for_status()
+
+            elapsed_time = (time.time() - start_time) * 1000  # Convert to ms
+
+            result = response.json()
+
+            return {
+                "success": True,
+                "response": result,
+                "response_time_ms": elapsed_time,
+                "error": None
+            }
+
+        except Exception as e:
+            elapsed_time = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "response": None,
+                "response_time_ms": elapsed_time,
+                "error": str(e)
+            }
+
 
 class LMStudioClient:
     """Client for LM Studio API (OpenAI-compatible)"""
@@ -257,6 +444,47 @@ class LMStudioClient:
                 "error": str(e)
             }
 
+    def chat_multi_turn(self, model: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Send a multi-turn chat request with tools (OpenAI-compatible)"""
+        url = f"{self.base_url}/v1/chat/completions"
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "temperature": 0.7
+        }
+
+        start_time = time.time()
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=self.config.api_timeout
+            )
+            response.raise_for_status()
+
+            elapsed_time = (time.time() - start_time) * 1000  # Convert to ms
+
+            result = response.json()
+
+            return {
+                "success": True,
+                "response": result,
+                "response_time_ms": elapsed_time,
+                "error": None
+            }
+
+        except Exception as e:
+            elapsed_time = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "response": None,
+                "response_time_ms": elapsed_time,
+                "error": str(e)
+            }
+
 
 class BenchmarkRunner:
     """Main benchmark runner"""
@@ -283,9 +511,12 @@ class BenchmarkRunner:
         print("=" * 80)
         print(f"Server: {self.config.server_type}")
         print(f"Models: {len(self.config.models)}")
-        print(f"Prompts: {len(self.config.prompts)}")
+        print(f"Standard prompts: {len(self.config.prompts)}")
+        print(f"Two-stage prompts: {len(self.config.two_stage_prompts)}")
         print(f"Tools: {len(self.config.tools)}")
-        print(f"Total tests: {len(self.config.models) * len(self.config.prompts)}")
+        total_tests = (len(self.config.models) * len(self.config.prompts)) + \
+                      (len(self.config.models) * len(self.config.two_stage_prompts))
+        print(f"Total tests: {total_tests}")
         print("=" * 80)
         print()
 
@@ -302,22 +533,42 @@ class BenchmarkRunner:
                     print(f"  Skipping model {model} due to pull failure")
                     continue
 
-            # Run all prompts for this model
-            for prompt_idx, prompt in enumerate(self.config.prompts, 1):
-                print(f"\n  [{prompt_idx}/{len(self.config.prompts)}] Prompt: {prompt[:60]}...")
+            # Run standard single-stage prompts
+            if self.config.prompts:
+                print("\n  Single-Stage Tests:")
+                for prompt_idx, prompt in enumerate(self.config.prompts, 1):
+                    print(f"\n  [{prompt_idx}/{len(self.config.prompts)}] Prompt: {prompt[:60]}...")
 
-                result = self.client.chat(model, prompt, self.config.tools)
+                    result = self.client.chat(model, prompt, self.config.tools)
 
-                # Extract metrics from response
-                metrics = self._extract_metrics(model, prompt, result)
-                self.results.append(metrics)
+                    # Extract metrics from response
+                    metrics = self._extract_metrics(model, prompt, result)
+                    self.results.append(metrics)
 
-                # Print summary
-                if result['success']:
-                    print(f"    ✓ Success | {result['response_time_ms']:.0f}ms | "
-                          f"Tool calls: {len(metrics['tool_calls'])}")
-                else:
-                    print(f"    ✗ Failed | Error: {result['error']}")
+                    # Print summary
+                    if result['success']:
+                        print(f"    ✓ Success | {result['response_time_ms']:.0f}ms | "
+                              f"Tool calls: {len(metrics['tool_calls'])}")
+                    else:
+                        print(f"    ✗ Failed | Error: {result['error']}")
+
+            # Run two-stage tests
+            if self.config.two_stage_prompts:
+                print("\n  Two-Stage Tests:")
+                for prompt_idx, prompt in enumerate(self.config.two_stage_prompts, 1):
+                    print(f"\n  [{prompt_idx}/{len(self.config.two_stage_prompts)}] Two-Stage Prompt: {prompt[:60]}...")
+
+                    result = self._run_two_stage_test(model, prompt)
+                    self.results.append(result)
+
+                    # Print summary
+                    if result['success']:
+                        stage1_calls = len(result.get('stage1_tool_calls', []))
+                        stage2_calls = len(result.get('stage2_tool_calls', []))
+                        print(f"    ✓ Success | {result['response_time_ms']:.0f}ms | "
+                              f"Stage1: {stage1_calls} calls, Stage2: {stage2_calls} calls")
+                    else:
+                        print(f"    ✗ Failed | Error: {result['error']}")
 
             # Delete model if configured
             if self.config.delete_after_test:
@@ -339,6 +590,7 @@ class BenchmarkRunner:
             "timestamp": datetime.now().isoformat(),
             "model": model,
             "prompt": prompt,
+            "test_type": "single_stage",
             "success": result['success'],
             "response_time_ms": result['response_time_ms'],
             "error": result['error'],
@@ -389,6 +641,146 @@ class BenchmarkRunner:
                 metrics['tokens']['total'] = usage.get('total_tokens', 0)
 
         return metrics
+
+    def _run_two_stage_test(self, model: str, prompt: str) -> Dict[str, Any]:
+        """Run a two-stage test: initial call, execute tools, follow-up call"""
+
+        total_start_time = time.time()
+
+        # Stage 1: Initial request
+        print(f"    Stage 1: Sending initial request...")
+        stage1_result = self.client.chat(model, prompt, self.config.tools)
+
+        if not stage1_result['success']:
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "model": model,
+                "prompt": prompt,
+                "test_type": "two_stage",
+                "success": False,
+                "response_time_ms": stage1_result['response_time_ms'],
+                "error": f"Stage 1 failed: {stage1_result['error']}",
+                "stage1_tool_calls": [],
+                "stage2_tool_calls": [],
+                "tool_calls": [],
+                "tokens": {"input": 0, "output": 0, "total": 0}
+            }
+
+        # Extract stage 1 tool calls
+        stage1_metrics = self._extract_metrics(model, prompt, stage1_result)
+        stage1_tool_calls = stage1_metrics['tool_calls']
+
+        if not stage1_tool_calls:
+            # No tool calls in stage 1, treat as completed
+            total_time = (time.time() - total_start_time) * 1000
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "model": model,
+                "prompt": prompt,
+                "test_type": "two_stage",
+                "success": True,
+                "response_time_ms": total_time,
+                "error": "No tool calls in stage 1",
+                "stage1_tool_calls": [],
+                "stage2_tool_calls": [],
+                "tool_calls": [],
+                "tokens": stage1_metrics['tokens']
+            }
+
+        print(f"    Stage 1: {len(stage1_tool_calls)} tool call(s) detected")
+
+        # Execute tools (simulate)
+        tool_results = []
+        for tool_call in stage1_tool_calls:
+            tool_name = tool_call.get('name')
+            tool_params = tool_call.get('parameters', {})
+
+            print(f"    Executing tool: {tool_name}({list(tool_params.keys())})")
+            result = ToolSimulator.execute_tool(tool_name, tool_params)
+            tool_results.append({
+                "tool": tool_name,
+                "result": result
+            })
+
+        # Stage 2: Follow-up with tool results
+        print(f"    Stage 2: Sending tool results back to model...")
+
+        # Build conversation history with tool results
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+
+        # Add assistant's response with tool calls (format depends on server)
+        if self.config.server_type == 'ollama':
+            # Ollama format
+            assistant_msg = stage1_result['response'].get('message', {})
+            messages.append(assistant_msg)
+
+            # Add tool results as user messages
+            for tool_result in tool_results:
+                messages.append({
+                    "role": "tool",
+                    "content": json.dumps(tool_result['result'])
+                })
+
+        elif self.config.server_type == 'lmstudio':
+            # LM Studio/OpenAI format
+            if 'choices' in stage1_result['response'] and len(stage1_result['response']['choices']) > 0:
+                assistant_msg = stage1_result['response']['choices'][0]['message']
+                messages.append(assistant_msg)
+
+                # Add tool results
+                for idx, tool_result in enumerate(tool_results):
+                    # Get the tool call ID if available
+                    tool_call_id = f"call_{idx}"
+                    if 'tool_calls' in assistant_msg and idx < len(assistant_msg['tool_calls']):
+                        tool_call_id = assistant_msg['tool_calls'][idx].get('id', tool_call_id)
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": json.dumps(tool_result['result'])
+                    })
+
+        # Make stage 2 request
+        stage2_result = self.client.chat_multi_turn(model, messages, self.config.tools)
+
+        # Extract stage 2 metrics
+        if stage2_result['success']:
+            stage2_metrics = self._extract_metrics(model, prompt, stage2_result)
+            stage2_tool_calls = stage2_metrics['tool_calls']
+            print(f"    Stage 2: {len(stage2_tool_calls)} tool call(s) detected")
+        else:
+            stage2_tool_calls = []
+            print(f"    Stage 2: Failed - {stage2_result['error']}")
+
+        # Calculate total metrics
+        total_time = (time.time() - total_start_time) * 1000
+        total_tokens = {
+            "input": stage1_metrics['tokens']['input'] + (stage2_metrics['tokens']['input'] if stage2_result['success'] else 0),
+            "output": stage1_metrics['tokens']['output'] + (stage2_metrics['tokens']['output'] if stage2_result['success'] else 0),
+            "total": 0
+        }
+        total_tokens['total'] = total_tokens['input'] + total_tokens['output']
+
+        all_tool_calls = stage1_tool_calls + stage2_tool_calls
+
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "model": model,
+            "prompt": prompt,
+            "test_type": "two_stage",
+            "success": stage1_result['success'] and stage2_result['success'],
+            "response_time_ms": total_time,
+            "stage1_response_time_ms": stage1_result['response_time_ms'],
+            "stage2_response_time_ms": stage2_result['response_time_ms'] if stage2_result['success'] else 0,
+            "error": stage2_result['error'] if not stage2_result['success'] else None,
+            "stage1_tool_calls": stage1_tool_calls,
+            "stage2_tool_calls": stage2_tool_calls,
+            "tool_calls": all_tool_calls,
+            "tokens": total_tokens,
+            "tool_execution_results": tool_results
+        }
 
     def _save_results(self):
         """Save results to JSON files"""
@@ -445,7 +837,13 @@ class BenchmarkRunner:
         failed = len(self.results) - successful
         total_tools = sum(len(r['tool_calls']) for r in self.results)
 
+        # Separate single-stage and two-stage tests
+        single_stage = [r for r in self.results if r.get('test_type') == 'single_stage']
+        two_stage = [r for r in self.results if r.get('test_type') == 'two_stage']
+
         print(f"Total tests: {len(self.results)}")
+        print(f"  Single-stage: {len(single_stage)}")
+        print(f"  Two-stage: {len(two_stage)}")
         print(f"Successful: {successful} ({successful/len(self.results)*100:.1f}%)")
         print(f"Failed: {failed} ({failed/len(self.results)*100:.1f}%)")
         print(f"Total tool calls: {total_tools}")
@@ -454,6 +852,26 @@ class BenchmarkRunner:
         if self.results:
             avg_time = sum(r['response_time_ms'] for r in self.results) / len(self.results)
             print(f"Avg response time: {avg_time:.0f}ms")
+
+        # Two-stage specific metrics
+        if two_stage:
+            print("\nTwo-Stage Test Metrics:")
+            successful_two_stage = sum(1 for r in two_stage if r['success'])
+            print(f"  Successful: {successful_two_stage}/{len(two_stage)}")
+
+            stage1_calls = sum(len(r.get('stage1_tool_calls', [])) for r in two_stage)
+            stage2_calls = sum(len(r.get('stage2_tool_calls', [])) for r in two_stage)
+            print(f"  Stage 1 tool calls: {stage1_calls}")
+            print(f"  Stage 2 tool calls: {stage2_calls}")
+
+            avg_stage1_time = sum(r.get('stage1_response_time_ms', 0) for r in two_stage) / len(two_stage)
+            avg_stage2_time = sum(r.get('stage2_response_time_ms', 0) for r in two_stage if r.get('stage2_response_time_ms', 0) > 0)
+            if avg_stage2_time > 0:
+                avg_stage2_time = avg_stage2_time / len([r for r in two_stage if r.get('stage2_response_time_ms', 0) > 0])
+
+            print(f"  Avg Stage 1 time: {avg_stage1_time:.0f}ms")
+            if avg_stage2_time > 0:
+                print(f"  Avg Stage 2 time: {avg_stage2_time:.0f}ms")
 
         print("=" * 80)
 
