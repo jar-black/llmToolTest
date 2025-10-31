@@ -1,0 +1,13 @@
+# Two-Stage Test Prompts
+# These prompts are designed to trigger sequential tool calls
+# Stage 1: LLM lists directory contents
+# Stage 2: LLM reads files from the directory
+
+# Analyze all files in the config directory
+Please analyze all the files in the ./config directory. First list what files are there, then read and summarize the content of each file.
+
+# Examine Python files in current directory
+Can you examine all Python files in the current directory? List them first, then read each one and tell me what they do.
+
+# Review text files in config folder
+I need you to review all .txt files in the config folder. Start by listing the directory, then read each text file.
