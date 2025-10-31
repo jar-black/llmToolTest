@@ -11,3 +11,36 @@ Can you examine all Python files in the current directory? List them first, then
 
 # Review text files in config folder
 I need you to review all .txt files in the config folder. Start by listing the directory, then read each text file.
+
+# Find and modify a specific line in benchmark.py
+Find line 10 in the ./benchmark.py file and read its content. Then replace that line with a comment saying "# Modified by test".
+
+# Get line with context and replace it
+Please get line 5 from ./config/prompts.txt with 2 lines of context (before and after). Then replace line 5 with the text "# Test replacement".
+
+# Search for Python files and read specific line
+List all Python files in the current directory with pattern '*.py'. Then read line 1 from the first Python file you find.
+
+# Find a line and remove it by replacing with empty string
+Get line 15 from ./benchmark.py to see what's there. Then replace line 15 with an empty string to remove it.
+
+# Complex multi-parameter test: read file then write modified version
+Read the first 10 lines of ./config/prompts.txt starting from line 1. Then write those contents to a new file at ./config/prompts_backup.txt.
+
+# Pattern-based directory listing followed by targeted read
+List all .json files in the ./config directory using pattern filtering. Then read the file you found and tell me about its structure.
+
+# Line-by-line analysis and modification
+Get line 20 from ./benchmark.py with 3 lines of context. Based on what you see, replace line 20 with appropriate content.
+
+# Sequential file operations with exact paths
+Read the contents of ./config/models.txt file. Then append the text "\n# Added by test" to the same file at ./config/models.txt using the write_file tool with append=true.
+
+# Find specific content and replace based on line number
+Read lines 5-10 from ./config/prompts.txt by using start_line=5 and num_lines=6. Then replace line 7 in ./config/prompts.txt with "# Modified line 7".
+
+# Recursive directory listing followed by file read
+List all files recursively in the ./config directory. Then read the content of ./config/tools.json file that you should have found in the listing.
+
+# Multi-step line manipulation
+Get line 100 from ./benchmark.py with 5 lines of context. Then replace line 100 with a comment describing what the original line was doing.
