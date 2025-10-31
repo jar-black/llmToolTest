@@ -21,7 +21,7 @@ import glob
 class BenchmarkConfig:
     """Configuration loaded from .env and config files"""
 
-    def __init__(self):
+    def __init__(self, single_model: Optional[str] = None):
         # Load environment variables
         load_dotenv()
 
@@ -43,6 +43,9 @@ class BenchmarkConfig:
         # Results configuration
         self.results_dir = Path(os.getenv('RESULTS_DIR', './results'))
 
+        # Store single model filter
+        self.single_model = single_model
+
         # Load configuration files
         self.models = self._load_models()
         self.prompts = self._load_prompts()
@@ -60,6 +63,13 @@ class BenchmarkConfig:
 
         if not models:
             raise ValueError("No models found in config/models.txt")
+
+        # Filter for single model if specified
+        if self.single_model:
+            if self.single_model in models:
+                return [self.single_model]
+            else:
+                raise ValueError(f"Model '{self.single_model}' not found in config/models.txt. Available models: {', '.join(models)}")
 
         return models
 
@@ -1072,12 +1082,17 @@ def main():
         choices=['ollama', 'lmstudio'],
         help='Override server type from .env'
     )
+    parser.add_argument(
+        '-m', '--model',
+        type=str,
+        help='Test only a specific model (must exist in config/models.txt)'
+    )
 
     args = parser.parse_args()
 
     try:
         # Load configuration
-        config = BenchmarkConfig()
+        config = BenchmarkConfig(single_model=args.model)
 
         # Override server type if specified
         if args.server:
