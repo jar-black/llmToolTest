@@ -120,14 +120,71 @@ class ToolSimulator:
     """Simulates tool execution for two-stage testing"""
 
     @staticmethod
-    def list_directory(directory_path: str, recursive: bool = False, pattern: Optional[str] = None) -> Dict[str, Any]:
+    def validate_path(file_path: str, current_dir: str) -> Dict[str, Any]:
+        """Validate that a path is safe and within allowed boundaries"""
+        try:
+            # Get absolute path
+            path = Path(file_path)
+            if not path.is_absolute():
+                # Make relative paths relative to current_dir
+                path = Path(current_dir) / path
+
+            # Resolve to absolute path (resolves .. and symlinks)
+            resolved_path = path.resolve()
+
+            # Get the working directory boundary
+            working_dir = Path(current_dir).resolve()
+
+            # Check if the path is within the working directory
+            try:
+                resolved_path.relative_to(working_dir)
+            except ValueError:
+                return {
+                    "valid": False,
+                    "error": f"Path '{file_path}' is outside the working directory. Access denied.",
+                    "resolved_path": str(resolved_path),
+                    "working_directory": str(working_dir)
+                }
+
+            return {
+                "valid": True,
+                "resolved_path": str(resolved_path),
+                "working_directory": str(working_dir)
+            }
+
+        except Exception as e:
+            return {
+                "valid": False,
+                "error": f"Invalid path '{file_path}': {str(e)}",
+                "working_directory": current_dir
+            }
+
+    @staticmethod
+    def list_directory(directory_path: str, recursive: bool = False, pattern: Optional[str] = None, current_dir: str = ".") -> Dict[str, Any]:
         """Simulate the list_directory tool"""
         try:
-            path = Path(directory_path)
+            # Validate path
+            validation = ToolSimulator.validate_path(directory_path, current_dir)
+            if not validation["valid"]:
+                return {
+                    "success": False,
+                    "error": validation["error"],
+                    "working_directory": validation["working_directory"]
+                }
+
+            path = Path(validation["resolved_path"])
             if not path.exists():
                 return {
                     "success": False,
-                    "error": f"Directory not found: {directory_path}"
+                    "error": f"Directory not found: {directory_path}",
+                    "working_directory": current_dir
+                }
+
+            if not path.is_dir():
+                return {
+                    "success": False,
+                    "error": f"Path is not a directory: {directory_path}",
+                    "working_directory": current_dir
                 }
 
             files = []
@@ -180,24 +237,43 @@ class ToolSimulator:
                 "success": True,
                 "directory": str(path),
                 "files": files,
-                "count": len(files)
+                "count": len(files),
+                "working_directory": current_dir
             }
 
         except Exception as e:
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "working_directory": current_dir
             }
 
     @staticmethod
-    def read_file(file_path: str, start_line: int = 1, num_lines: Optional[int] = None) -> Dict[str, Any]:
+    def read_file(file_path: str, start_line: int = 1, num_lines: Optional[int] = None, current_dir: str = ".") -> Dict[str, Any]:
         """Simulate the read_file tool"""
         try:
-            path = Path(file_path)
+            # Validate path
+            validation = ToolSimulator.validate_path(file_path, current_dir)
+            if not validation["valid"]:
+                return {
+                    "success": False,
+                    "error": validation["error"],
+                    "working_directory": validation["working_directory"]
+                }
+
+            path = Path(validation["resolved_path"])
             if not path.exists():
                 return {
                     "success": False,
-                    "error": f"File not found: {file_path}"
+                    "error": f"File not found: {file_path}",
+                    "working_directory": current_dir
+                }
+
+            if not path.is_file():
+                return {
+                    "success": False,
+                    "error": f"Path is not a file: {file_path}",
+                    "working_directory": current_dir
                 }
 
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -217,34 +293,53 @@ class ToolSimulator:
                 "file_path": str(path),
                 "content": content,
                 "total_lines": len(lines),
-                "lines_returned": end_idx - start_idx
+                "lines_returned": end_idx - start_idx,
+                "working_directory": current_dir
             }
 
         except Exception as e:
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "working_directory": current_dir
             }
 
     @staticmethod
-    def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def execute_tool(tool_name: str, parameters: Dict[str, Any], current_dir: str = ".") -> Dict[str, Any]:
         """Execute a tool by name with given parameters"""
         if tool_name == "list_directory":
             return ToolSimulator.list_directory(
                 parameters.get("directory_path", "."),
                 parameters.get("recursive", False),
-                parameters.get("pattern")
+                parameters.get("pattern"),
+                current_dir
             )
         elif tool_name == "read_file":
             return ToolSimulator.read_file(
                 parameters.get("file_path"),
                 parameters.get("start_line", 1),
-                parameters.get("num_lines")
+                parameters.get("num_lines"),
+                current_dir
             )
+        elif tool_name == "write_file":
+            # Validate path but don't actually write (read-only simulation)
+            validation = ToolSimulator.validate_path(parameters.get("file_path", ""), current_dir)
+            if not validation["valid"]:
+                return {
+                    "success": False,
+                    "error": validation["error"],
+                    "working_directory": validation["working_directory"]
+                }
+            return {
+                "success": False,
+                "error": "write_file is not supported in benchmark mode (read-only)",
+                "working_directory": current_dir
+            }
         else:
             return {
                 "success": False,
-                "error": f"Unknown tool: {tool_name}"
+                "error": f"Unknown tool: {tool_name}",
+                "working_directory": current_dir
             }
 
 
@@ -303,9 +398,16 @@ class OllamaClient:
         """Send a chat request with tools"""
         url = f"{self.base_url}/api/chat"
 
+        # Get current working directory
+        current_dir = os.getcwd()
+
+        # Add system message with working directory context
+        system_message = f"You are a helpful assistant with access to tools. Current working directory: {current_dir}"
+
         payload = {
             "model": model,
             "messages": [
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ],
             "tools": tools,
@@ -345,6 +447,12 @@ class OllamaClient:
     def chat_multi_turn(self, model: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Send a multi-turn chat request with tools"""
         url = f"{self.base_url}/api/chat"
+
+        # Ensure system message with working directory is included
+        current_dir = os.getcwd()
+        if not messages or messages[0].get('role') != 'system':
+            system_message = f"You are a helpful assistant with access to tools. Current working directory: {current_dir}"
+            messages = [{"role": "system", "content": system_message}] + messages
 
         payload = {
             "model": model,
@@ -405,9 +513,16 @@ class LMStudioClient:
         """Send a chat request with tools (OpenAI-compatible)"""
         url = f"{self.base_url}/v1/chat/completions"
 
+        # Get current working directory
+        current_dir = os.getcwd()
+
+        # Add system message with working directory context
+        system_message = f"You are a helpful assistant with access to tools. Current working directory: {current_dir}"
+
         payload = {
             "model": model,
             "messages": [
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ],
             "tools": tools,
@@ -447,6 +562,12 @@ class LMStudioClient:
     def chat_multi_turn(self, model: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Send a multi-turn chat request with tools (OpenAI-compatible)"""
         url = f"{self.base_url}/v1/chat/completions"
+
+        # Ensure system message with working directory is included
+        current_dir = os.getcwd()
+        if not messages or messages[0].get('role') != 'system':
+            system_message = f"You are a helpful assistant with access to tools. Current working directory: {current_dir}"
+            messages = [{"role": "system", "content": system_message}] + messages
 
         payload = {
             "model": model,
@@ -690,13 +811,14 @@ class BenchmarkRunner:
         print(f"    Stage 1: {len(stage1_tool_calls)} tool call(s) detected")
 
         # Execute tools (simulate)
+        current_dir = os.getcwd()
         tool_results = []
         for tool_call in stage1_tool_calls:
             tool_name = tool_call.get('name')
             tool_params = tool_call.get('parameters', {})
 
             print(f"    Executing tool: {tool_name}({list(tool_params.keys())})")
-            result = ToolSimulator.execute_tool(tool_name, tool_params)
+            result = ToolSimulator.execute_tool(tool_name, tool_params, current_dir)
             tool_results.append({
                 "tool": tool_name,
                 "result": result
@@ -795,6 +917,56 @@ class BenchmarkRunner:
         total_tool_calls = sum(len(r['tool_calls']) for r in self.results)
         avg_response_time = sum(r['response_time_ms'] for r in self.results) / len(self.results) if self.results else 0
 
+        # Group results by model
+        results_by_model = {}
+        for result in self.results:
+            model = result['model']
+            if model not in results_by_model:
+                results_by_model[model] = []
+            results_by_model[model].append(result)
+
+        # Calculate per-model statistics
+        model_stats = {}
+        for model, model_results in results_by_model.items():
+            successful = sum(1 for r in model_results if r['success'])
+            failed = len(model_results) - successful
+            total_calls = sum(len(r['tool_calls']) for r in model_results)
+            avg_time = sum(r['response_time_ms'] for r in model_results) / len(model_results)
+
+            # Separate by test type
+            single_stage = [r for r in model_results if r.get('test_type') == 'single_stage']
+            two_stage = [r for r in model_results if r.get('test_type') == 'two_stage']
+
+            model_stats[model] = {
+                "total_tests": len(model_results),
+                "successful_tests": successful,
+                "failed_tests": failed,
+                "success_rate": round(successful / len(model_results) * 100, 2) if model_results else 0,
+                "total_tool_calls": total_calls,
+                "avg_response_time_ms": round(avg_time, 2),
+                "single_stage_tests": len(single_stage),
+                "two_stage_tests": len(two_stage)
+            }
+
+            # Add two-stage specific stats if available
+            if two_stage:
+                successful_two_stage = sum(1 for r in two_stage if r['success'])
+                stage1_calls = sum(len(r.get('stage1_tool_calls', [])) for r in two_stage)
+                stage2_calls = sum(len(r.get('stage2_tool_calls', [])) for r in two_stage)
+                avg_stage1_time = sum(r.get('stage1_response_time_ms', 0) for r in two_stage) / len(two_stage)
+                avg_stage2_time = sum(r.get('stage2_response_time_ms', 0) for r in two_stage if r.get('stage2_response_time_ms', 0) > 0)
+                if avg_stage2_time > 0:
+                    avg_stage2_time = avg_stage2_time / len([r for r in two_stage if r.get('stage2_response_time_ms', 0) > 0])
+
+                model_stats[model]['two_stage_stats'] = {
+                    "successful": successful_two_stage,
+                    "success_rate": round(successful_two_stage / len(two_stage) * 100, 2),
+                    "stage1_tool_calls": stage1_calls,
+                    "stage2_tool_calls": stage2_calls,
+                    "avg_stage1_time_ms": round(avg_stage1_time, 2),
+                    "avg_stage2_time_ms": round(avg_stage2_time, 2) if avg_stage2_time > 0 else 0
+                }
+
         summary = {
             "benchmark_metadata": {
                 "start_time": self.start_time.isoformat(),
@@ -810,7 +982,9 @@ class BenchmarkRunner:
             },
             "models_tested": self.config.models,
             "prompts_used": self.config.prompts,
-            "tools_available": [tool['function']['name'] for tool in self.config.tools]
+            "two_stage_prompts_used": self.config.two_stage_prompts,
+            "tools_available": [tool['function']['name'] for tool in self.config.tools],
+            "per_model_statistics": model_stats
         }
 
         # Save summary
@@ -818,14 +992,26 @@ class BenchmarkRunner:
         with open(summary_file, 'w') as f:
             json.dump(summary, f, indent=2)
 
-        # Save detailed results
+        # Save detailed results (all models combined)
         detailed_file = results_dir / "detailed_results.json"
         with open(detailed_file, 'w') as f:
             json.dump(self.results, f, indent=2)
 
+        # Save per-model detailed results
+        model_files = []
+        for model, model_results in results_by_model.items():
+            # Sanitize model name for filename
+            safe_model_name = model.replace(':', '_').replace('/', '_')
+            model_file = results_dir / f"results_{safe_model_name}.json"
+            with open(model_file, 'w') as f:
+                json.dump(model_results, f, indent=2)
+            model_files.append(model_file.name)
+
         print(f"\n📊 Results saved to: {results_dir}")
         print(f"  - {summary_file.name}")
         print(f"  - {detailed_file.name}")
+        for model_file in model_files:
+            print(f"  - {model_file}")
 
     def _print_summary(self):
         """Print benchmark summary"""
